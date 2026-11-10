@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emoji RTS: Bunker Battles Online</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f15; color: #fff; text-align: center; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }
+        
+        .screen { display: none; height: 100vh; width: 100vw; flex-direction: column; align-items: center; justify-content: center; }
+        .active { display: flex; }
+        
+        h1 { margin-bottom: 8px; color: #ffca28; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        
+        .profile-box { background: rgba(255,255,255,0.05); border: 1px solid #333; padding: 12px 18px; border-radius: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+        .nickname-input { background: #1b1b26; border: 1px solid #444; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 16px; text-align: center; width: 220px; outline: none; }
+        .nickname-input:focus { border-color: #ff9800; }
+
+        .stats-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+        .coins-display { font-size: 15px; font-weight: bold; color: #ffd700; background: rgba(255,215,0,0.1); padding: 5px 12px; border-radius: 20px; border: 1px solid #ffd700; }
+        .gems-display { font-size: 15px; font-weight: bold; color: #00e5ff; background: rgba(0,229,255,0.1); padding: 5px 12px; border-radius: 20px; border: 1px solid #00e5ff; }
+        .trophies-display { font-size: 15px; font-weight: bold; color: #ff9800; background: rgba(255,152,0,0.1); padding: 5px 12px; border-radius: 20px; border: 1px solid #ff9800; }
+        
+        .btn { color: white; border: none; padding: 14px 28px; font-size: 18px; font-weight: bold; border-radius: 10px; cursor: pointer; margin: 6px; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); width: 260px; }
+        .btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
+        .btn-find { background: #1b5e20; border: 2px solid #2e7d32; }
+        .btn-deck { background: #f57f17; color: #000; border: 2px solid #fbc02d; }
+        .btn-danger { background: #f44336; width: auto; }
+        
+        .cards-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 950px; height: 62vh; overflow-y: auto; padding: 12px; background: #181824; border-radius: 12px; border: 1px solid #333; }
+        
+        .card { width: 140px; background: #232334; border: 2px solid #ffffff; border-radius: 10px; padding: 8px; display: flex; flex-direction: column; align-items: center; cursor: pointer; position: relative; }
+        .card.rarity-heroic { border-color: #ff1744 !important; box-shadow: 0 0 8px rgba(255,23,68,0.3); }
+        .card.active-deck { border-width: 3px; background: #193322; }
+        
+        .card-img-box { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin: 4px 0; }
+        .card-img-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .card-emoji { font-size: 34px; line-height: 44px; }
+        
+        .card-title { font-size: 12px; font-weight: bold; margin-bottom: 4px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; width: 100%; color: #fff; }
+        .card-stat { font-size: 10px; color: #bbb; text-align: left; width: 100%; margin: 1px 0; }
+        .card-lvl { position: absolute; top: 6px; right: 6px; background: #2196f3; color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .upgrade-btn { background: #ffd700; color: #000; font-size: 10px; font-weight: bold; border: none; padding: 5px; border-radius: 5px; margin-top: 6px; width: 100%; cursor: pointer; }
+
+        #game-container { position: relative; width: 380px; height: 540px; background: #1e2d1e; border: 4px solid #2e4d2e; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.7); }
+        canvas { width: 100%; height: 100%; display: block; }
+        
+        .opponent-header { position: absolute; top: 8px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; background: rgba(0,0,0,0.7); padding: 5px 12px; border-radius: 6px; pointer-events: none; z-index: 10; border: 1px solid rgba(255,255,255,0.1); }
+
+        .hud { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(10, 10, 15, 0.92); padding: 8px; display: flex; flex-direction: column; align-items: center; border-top: 2px solid #333; }
+        .energy-bar-container { width: 100%; height: 14px; background: #2a2a3a; border-radius: 7px; overflow: hidden; margin-bottom: 6px; position: relative; border: 1px solid #444; }
+        .energy-fill { height: 100%; background: linear-gradient(90deg, #aa00ff, #e040fb); width: 0%; transition: width 0.1s linear; }
+        .energy-text { position: absolute; width: 100%; text-align: center; font-size: 10px; font-weight: bold; top: 0; line-height: 14px; color: #fff; text-shadow: 0 1px 2px #000; }
+        .hand { display: flex; gap: 6px; justify-content: center; width: 100%; }
+        .hand-card { width: 42px; height: 58px; background: #252535; border: 2px solid #454565; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: space-around; padding: 2px; cursor: pointer; }
+        .hand-card.selected { border-color: #ffd700; transform: translateY(-4px); background: #353550; }
+        .hand-card.disabled { opacity: 0.4; cursor: not-allowed; }
+        .hand-card .cost { background: #aa00ff; border-radius: 50%; width: 14px; height: 14px; font-size: 9px; font-weight: bold; display: flex; align-items: center; justify-content: center; color: white; }
+
+        .searching-spinner { border: 4px solid rgba(255,255,255,0.1); border-left-color: #4caf50; border-radius: 50%; width: 42px; height: 42px; animation: spin 1s linear infinite; margin: 20px 0; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="screen-menu" class="screen active">
+        <h1>Emoji RTS: Online</h1>
+        
+        <div class="profile-box">
+            <input type="text" id="nickname-input" class="nickname-input" placeholder="Введите ваш никнейм" maxlength="14" value="Игрок338">
+            <div class="stats-row">
+                <div class="coins-display">💰 <span id="menu-coins">800000</span></div>
+                <div class="gems-display">💎 <span id="menu-gems">50</span></div>
+                <div class="trophies-display">🏆 <span id="menu-trophies">0</span></div>
+            </div>
+        </div>
+
+        <button class="btn btn-find" onclick="startMatchmaking()">⚔️ НАЙТИ ПРОТИВНИКА</button>
+        <button class="btn btn-deck" onclick="showScreen('screen-deck')">🃏 КОЛОДА И ПРОКАЧКА</button>
+    </div>
+
+    <div id="screen-search" class="screen">
+        <h2>Поиск соперника...</h2>
+        <div class="searching-spinner"></div>
+        <button class="btn btn-danger" onclick="cancelMatchmaking()">Отмена</button>
+    </div>
+
+    <div id="screen-deck" class="screen">
+        <h1>Колода и Прокачка</h1>
+        <div class="stats-row" style="margin-bottom: 8px;">
+            <div class="coins-display">💰 <span id="deck-coins">800000</span></div>
+            <div class="gems-display">💎 <span id="deck-gems">50</span></div>
+        </div>
+        <div class="cards-container" id="cards-container"></div>
+        <button class="btn btn-danger" onclick="showScreen('screen-menu')" style="margin-top: 10px; padding: 8px 20px;">В Меню</button>
+    </div>
+
+    <div id="screen-game" class="screen">
+        <div id="game-container">
+            <div class="opponent-header">
+                <span id="opp-name">Соперник</span>
+                <span id="opp-trophies">🏆 0</span>
+            </div>
+            <canvas id="gameCanvas"></canvas>
+            <div class="hud">
+                <div class="energy-bar-container">
+                    <div id="energy-fill" class="energy-fill"></div>
+                    <div id="energy-text" class="energy-text">Энергия: 0 / 10</div>
+                </div>
+                <div class="hand" id="hand-container"></div>
+            </div>
+        </div>
+        <button class="btn btn-danger" onclick="surrender()" style="margin-top: 8px; padding: 6px 16px; font-size: 13px;">Сдаться</button>
+    </div>
+
+    <script>
+        const socket = io({ transports: ['websocket', 'polling'] });
+
+        function formatNum(val) {
+            if (val === undefined || val === null || isNaN(val)) return '0';
+            const num = Number(val);
+            if (Number.isInteger(num)) {
+                return num.toString();
+            }
+            const fixed = num.toFixed(2);
+            return parseFloat(fixed).toString();
+        }
+
+        const BASE_CARDS = [
+            { id: 1, name: "Sergeant", type: "Unit", rarity: "Common", emoji: "🪖", energy: 3, hp: 1100.0, damage: 120.5, speed: 1.8, hitSpeed: 1.8, range: 2.0, radius: 0.8, target: "Ground" },
+            { id: 2, name: "Grenadier", type: "Unit", rarity: "Common", emoji: "💣", energy: 2, hp: 300.0, damage: 115.0, speed: 1.6, hitSpeed: 1.3, range: 2.5, radius: 1.2, target: "Ground", projEmoji: "💣", projSpeed: 10.1 },
+            { id: 3, name: "Riflemen", type: "Unit", rarity: "Common", emoji: "🔫", energy: 3, hp: 240.0, damage: 65.7, speed: 1.6, hitSpeed: 1.6, range: 5.0, target: "Both", count: 3 },
+            { id: 4, name: "Cruiser Tank", type: "Unit", rarity: "Common", cardIcon: "tankcard.png", spritePlayer: "tank.png", spriteEnemy: "enemytank.png", energy: 4, hp: 2645.0, damage: 220.51, speed: 1.5, hitSpeed: 1.5, range: 2.0, target: "Buildings" },
+            { id: 5, name: "Sniper", type: "Unit", rarity: "Common", emoji: "🔫", energy: 5, hp: 952.0, damage: 635.0, speed: 1.6, hitSpeed: 1.6, range: 7.0, target: "Both" },
+            { id: 6, name: "Soldiers", type: "Unit", rarity: "Common", emoji: "🪖", energy: 1, hp: 120.0, damage: 20.0, speed: 1.8, hitSpeed: 0.4, range: 2.5, target: "Both", count: 2 },
+            { id: 7, name: "Flame Trooper", type: "Unit", rarity: "Common", emoji: "🔥", energy: 5, hp: 2941.0, damage: 127.0, speed: 1.8, hitSpeed: 0.5, range: 2.5, target: "Ground", projEmoji: "🔥", projSpeed: 12.5 },
+            { id: 8, name: "Hammer Man", type: "Unit", rarity: "Common", emoji: "🔨", energy: 4, hp: 1100.0, damage: 700.0, speed: 1.8, hitSpeed: 2.0, range: 1.25, target: "Ground" },
+            { id: 9, name: "Recruit Squad", type: "Unit", rarity: "Common", emoji: "🔪", energy: 1, hp: 39.5, damage: 19.5, speed: 1.8, hitSpeed: 1.0, range: 0.3, target: "Ground", count: 6, rows: 2, cols: 3 },
+            { id: 10, name: "Recruit Platoon", type: "Unit", rarity: "Common", emoji: "🔪", energy: 3, hp: 39.5, damage: 19.5, speed: 1.8, hitSpeed: 1.0, range: 0.3, target: "Ground", count: 24, rows: 4, cols: 6 },
+            { id: 11, name: "Recruit Company", type: "Unit", rarity: "Common", emoji: "🔪", energy: 7, hp: 39.5, damage: 19.5, speed: 1.8, hitSpeed: 1.0, range: 0.3, target: "Ground", count: 54, rows: 6, cols: 9 },
+            { id: 12, name: "Soldier Group", type: "Unit", rarity: "Common", emoji: "🪖", energy: 3, hp: 120.0, damage: 20.0, speed: 1.8, hitSpeed: 0.4, range: 2.5, target: "Both", count: 8, rows: 1, cols: 8 },
+            { id: 13, name: "Soldier Company", type: "Unit", rarity: "Common", emoji: "🪖", energy: 5, hp: 120.0, damage: 20.0, speed: 1.8, hitSpeed: 0.4, range: 2.5, target: "Both", count: 14, rows: 2, cols: 7 },
+            { id: 14, name: "APC", type: "Unit", rarity: "Common", cardIcon: "apc_card.png", spritePlayer: "apc.png", spriteEnemy: "enemy_apc.png", energy: 6, hp: 3967.0, damage: 143.5, speed: 1.6, hitSpeed: 1.0, range: 2.0, target: "Buildings", deathSpawn: true, spawnUnitId: 3, spawnCount: 3, spawnLvl: 7 },
+            { id: 15, name: "Tactical Choppers", type: "Unit", rarity: "Common", emoji: "🚁", energy: 2, hp: 120.0, damage: 25.0, speed: 1.8, hitSpeed: 0.5, range: 2.5, target: "Both", count: 3, isAir: true },
+            { id: 16, name: "Tactical Group", type: "Unit", rarity: "Common", emoji: "🚁", energy: 4, hp: 120.0, damage: 25.0, speed: 1.8, hitSpeed: 0.5, range: 2.5, target: "Both", count: 6, rows: 2, cols: 3, isAir: true },
+            { id: 17, name: "Helipad", type: "Building", rarity: "Common", emoji: "🏗️", isBuilding: true, energy: 3, hp: 1007.0, minusHpSec: 14.4, spawnUnitId: 15, spawnCount: 2, spawnLvl: 4, firstSpawn: 1.0, spawnInterval: 9.0 },
+            { id: 18, name: "Soldier Camp", type: "Building", rarity: "Common", emoji: "🏕️", isBuilding: true, energy: 2, hp: 503.0, minusHpSec: 25.2, spawnUnitId: 6, spawnCount: 1, spawnLvl: 4, firstSpawn: 1.0, spawnInterval: 2.2 },
+            { id: 19, name: "Barracks", type: "Building", rarity: "Common", emoji: "⛺", isBuilding: true, energy: 4, hp: 1056.0, minusHpSec: 55.6, spawnUnitId: 3, spawnCount: 3, spawnLvl: 4, firstSpawn: 1.0, spawnInterval: 9.0 },
+            { id: 20, name: "Assault Chopper", type: "Unit", rarity: "Common", emoji: "🚀", energy: 3, hp: 1259.0, damage: 158.0, speed: 1.6, hitSpeed: 1.6, firstHit: 0.1, range: 4.5, target: "Both", isAir: true },
+            { id: 21, name: "Warcry", type: "Unit", rarity: "Heroic", cardIcon: "warcrycard.png", spritePlayer: "warcry.png", spriteEnemy: "enemywarcry.png", energy: 6, hp: 8820.36, damage: 266.36, speed: 2.4, hitSpeed: 1.2, range: 2.5, target: "Both" },
+            { id: 22, name: "EMP", type: "Spell", rarity: "Common", cardIcon: "EMP.png", spriteEffect: "img.png", effectDuration: 3.5, energy: 2, damage: 482.0, bunkerDmg: 16.0, radius: 2.5 }
+        ];
+
+        const loadedImages = {};
+        function preloadImages() {
+            BASE_CARDS.forEach(c => {
+                if(c.spritePlayer) { loadedImages[c.spritePlayer] = new Image(); loadedImages[c.spritePlayer].src = c.spritePlayer; }
+                if(c.spriteEnemy) { loadedImages[c.spriteEnemy] = new Image(); loadedImages[c.spriteEnemy].src = c.spriteEnemy; }
+                if(c.spriteEffect) { loadedImages[c.spriteEffect] = new Image(); loadedImages[c.spriteEffect].src = c.spriteEffect; }
+            });
+        }
+        preloadImages();
+
+        let state = {
+            nickname: localStorage.getItem('nickname') || "Игрок338",
+            coins: parseInt(localStorage.getItem('coins')) || 800000,
+            gems: parseInt(localStorage.getItem('gems')) || 50,
+            trophies: parseInt(localStorage.getItem('trophies')) || 0,
+            cardLevels: JSON.parse(localStorage.getItem('cardLevels')) || {},
+            deck: JSON.parse(localStorage.getItem('deck')) || [1, 2, 3, 4, 6, 9, 14, 21]
+        };
+
+        BASE_CARDS.forEach(c => { if(!state.cardLevels[c.id]) state.cardLevels[c.id] = 1; });
+
+        document.getElementById('nickname-input').value = state.nickname;
+        document.getElementById('nickname-input').onchange = (e) => {
+            state.nickname = e.target.value.trim() || "Игрок338";
+            localStorage.setItem('nickname', state.nickname);
+        };
+
+        function saveState() {
+            localStorage.setItem('coins', state.coins);
+            localStorage.setItem('gems', state.gems);
+            localStorage.setItem('trophies', state.trophies);
+            localStorage.setItem('cardLevels', JSON.stringify(state.cardLevels));
+            localStorage.setItem('deck', JSON.stringify(state.deck));
+            updateUI();
+        }
+
+        function getUpgradeCost(card, lvl) {
+            if (card.rarity === "Heroic") {
+                return { currency: "coins", cost: 400000 * Math.pow(2, lvl - 1) };
+            } else {
+                return { currency: "gems", cost: Math.pow(2, lvl - 2) > 0 ? Math.pow(2, lvl - 2) : 1 };
+            }
+        }
+
+        function getMaxLevel(card) {
+            return card.rarity === "Heroic" ? 5 : 17;
+        }
+
+        function getScaledStat(val, lvl) {
+            return val * Math.pow(1.08, lvl - 1);
+        }
+
+        function updateUI() {
+            document.getElementById('menu-coins').innerText = formatNum(state.coins);
+            document.getElementById('deck-coins').innerText = formatNum(state.coins);
+            document.getElementById('menu-gems').innerText = formatNum(state.gems);
+            document.getElementById('deck-gems').innerText = formatNum(state.gems);
+            document.getElementById('menu-trophies').innerText = formatNum(state.trophies);
+        }
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            if(id === 'screen-deck') renderDeck();
+            updateUI();
+        }
+
+        function renderDeck() {
+            const container = document.getElementById('cards-container');
+            container.innerHTML = '';
+            BASE_CARDS.forEach(card => {
+                const lvl = state.cardLevels[card.id];
+                const inDeck = state.deck.includes(card.id);
+                const maxLvl = getMaxLevel(card);
+                const upInfo = getUpgradeCost(card, lvl);
+
+                const cardEl = document.createElement('div');
+                cardEl.className = `card ${card.rarity === 'Heroic' ? 'rarity-heroic' : ''} ${inDeck ? 'active-deck' : ''}`;
+                
+                let imageOrEmojiHtml = card.cardIcon ? `<img src="${card.cardIcon}" alt="${card.name}">` : `<div class="card-emoji">${card.emoji}</div>`;
+
+                let statsHtml = '';
+                if (card.type === "Spell") {
+                    const curDmg = formatNum(getScaledStat(card.damage, lvl));
+                    const curBunkerDmg = formatNum(getScaledStat(card.bunkerDmg, lvl));
+                    statsHtml = `
+                        <div class="card-stat">⚔️ Dmg: ${curDmg}</div>
+                        <div class="card-stat">🏰 BunkerDmg: ${curBunkerDmg}</div>
+                        <div class="card-stat">🎯 Radius: ${formatNum(card.radius)} tiles</div>
+                    `;
+                } else {
+                    const curHp = formatNum(getScaledStat(card.hp, lvl));
+                    const curDmg = card.damage ? formatNum(getScaledStat(card.damage, lvl)) : '0';
+                    statsHtml = `
+                        <div class="card-stat">❤️ HP: ${curHp}</div>
+                        ${card.damage ? `<div class="card-stat">⚔️ Dmg: ${curDmg}</div>` : ''}
+                        ${card.range ? `<div class="card-stat">🎯 Range: ${formatNum(card.range)}</div>` : ''}
+                    `;
+                }
+
+                const costIcon = upInfo.currency === "gems" ? "💎" : "🪙";
+
+                cardEl.innerHTML = `
+                    <div class="card-lvl">${lvl}</div>
+                    <div class="card-img-box">${imageOrEmojiHtml}</div>
+                    <div class="card-title">${card.name}</div>
+                    <div class="card-stat">⚡ Energy: ${formatNum(card.energy)}</div>
+                    <div class="card-stat">⭐ Rarity: ${card.rarity}</div>
+                    <div class="card-stat">📂 Type: ${card.type}</div>
+                    ${statsHtml}
+                    ${lvl < maxLvl ? `<button class="upgrade-btn" onclick="upgradeCard(event, ${card.id})">Улучшить (${formatNum(upInfo.cost)} ${costIcon})</button>` : '<div style="font-size:10px;color:#ffd700;margin-top:4px;">MAX</div>'}
+                `;
+                
+                cardEl.onclick = (e) => {
+                    if(e.target.tagName === 'BUTTON') return;
+                    toggleDeck(card.id);
+                };
+                container.appendChild(cardEl);
+            });
+        }
+
+        function toggleDeck(id) {
+            if(state.deck.includes(id)) {
+                if(state.deck.length > 1) state.deck = state.deck.filter(x => x !== id);
+            } else {
+                if(state.deck.length < 8) state.deck.push(id);
+            }
+            saveState();
+            renderDeck();
+        }
+
+        function upgradeCard(e, id) {
+            e.stopPropagation();
+            const card = BASE_CARDS.find(c => c.id === id);
+            const lvl = state.cardLevels[id];
+            if(lvl >= getMaxLevel(card)) return;
+            
+            const upInfo = getUpgradeCost(card, lvl);
+            if(upInfo.currency === "gems" && state.gems >= upInfo.cost) {
+                state.gems -= upInfo.cost;
+                state.cardLevels[id]++;
+                saveState();
+                renderDeck();
+            } else if(upInfo.currency === "coins" && state.coins >= upInfo.cost) {
+                state.coins -= upInfo.cost;
+                state.cardLevels[id]++;
+                saveState();
+                renderDeck();
+            }
+        }
+
+        function startMatchmaking() {
+            showScreen('screen-search');
+            socket.emit('find_match', {
+                nickname: state.nickname,
+                trophies: state.trophies,
+                deck: state.deck,
+                cardLevels: state.cardLevels
+            });
+        }
+
+        function cancelMatchmaking() {
+            socket.emit('cancel_match');
+            showScreen('screen-menu');
+        }
+
+        socket.on('match_found', (data) => {
+            document.getElementById('opp-name').innerText = data.opponentNickname;
+            document.getElementById('opp-trophies').innerText = `🏆 ${formatNum(data.opponentTrophies)}`;
+            initGameEngine();
+        });
+
+        socket.on('enemy_deploy_card', (data) => {
+            const card = BASE_CARDS.find(c => c.id === data.cardId);
+            if(card) {
+                deployCard(card, data.cardId, false, data.x, data.y, data.level);
+            }
+        });
+
+        socket.on('game_over', (data) => {
+            if(gameLoopId) cancelAnimationFrame(gameLoopId);
+            state.trophies += data.trophyChange;
+            state.coins += data.coinsReward;
+            state.gems += data.gemsReward;
+            saveState();
+
+            if(data.win) {
+                alert(`ПОБЕДА!\nМедали: +${data.trophyChange} 🏆\nМонеты: +${formatNum(data.coinsReward)} 🪙\nГемы: +${data.gemsReward} 💎`);
+            } else {
+                alert(`ПОРАЖЕНИЕ!\nПотеряно медалей: ${data.trophyChange} 🏆`);
+            }
+            showScreen('screen-menu');
+        });
+
+        let gameLoopId = null;
+        let selectedHandIndex = null;
+        let energy = 0;
+        let entities = [];
+        let projectiles = [];
+        let tracers = [];
+        let spellEffects = [];
+
+        const CANVAS_W = 380;
+        const CANVAS_H = 540;
+        const GRID_CELLS = 25;
+        const TILE_H = CANVAS_H / GRID_CELLS;
+
+        function initGameEngine() {
+            showScreen('screen-game');
+            const canvas = document.getElementById('gameCanvas');
+            canvas.width = CANVAS_W;
+            canvas.height = CANVAS_H;
+            
+            energy = 5.0;
+            entities = [];
+            projectiles = [];
+            tracers = [];
+            spellEffects = [];
+            selectedHandIndex = null;
+
+            createBuilding(true, "Main Bunker", "🛡️", 3749.5, 150.0, 2.0, 8.0, CANVAS_W/2, CANVAS_H - 3 * TILE_H);
+            createBuilding(true, "Small Bunker", "🛡️", 2600.0, 76.0, 0.8, 8.5, CANVAS_W/4, CANVAS_H - 7 * TILE_H);
+            createBuilding(true, "Trench", "🪖", 2000.0, 40.0, 0.4, 8.5, (3*CANVAS_W)/4, CANVAS_H - 7 * TILE_H);
+
+            createBuilding(false, "Main Bunker", "🛡️", 3749.5, 150.0, 2.0, 8.0, CANVAS_W/2, 3 * TILE_H);
+            createBuilding(false, "Small Bunker", "🛡️", 2600.0, 76.0, 0.8, 8.5, CANVAS_W/4, 7 * TILE_H);
+            createBuilding(false, "Trench", "🪖", 2000.0, 40.0, 0.4, 8.5, (3*CANVAS_W)/4, 7 * TILE_H);
+
+            renderHand();
+
+            canvas.onclick = (e) => {
+                if(selectedHandIndex === null) return;
+                const rect = canvas.getBoundingClientRect();
+                const clickY = (e.clientY - rect.top) * (CANVAS_H / rect.height);
+                const clickX = (e.clientX - rect.left) * (CANVAS_W / rect.width);
+
+                const cardId = state.deck[selectedHandIndex];
+                const card = BASE_CARDS.find(c => c.id === cardId);
+                const cardLvl = state.cardLevels[cardId];
+
+                if(card.type !== "Spell" && clickY < CANVAS_H / 2) return;
+
+                if(energy >= card.energy) {
+                    energy -= card.energy;
+                    deployCard(card, cardId, true, clickX, clickY, cardLvl);
+                    socket.emit('deploy_card', { cardId: cardId, x: clickX, y: clickY, level: cardLvl });
+                    selectedHandIndex = null;
+                    renderHand();
+                }
+            };
+
+            lastTime = performance.now();
+            if(gameLoopId) cancelAnimationFrame(gameLoopId);
+            gameLoopId = requestAnimationFrame(gameStep);
+        }
+
+        let lastTime = 0;
+
+        function createBuilding(isPlayer, name, emoji, hp, damage, hitSpeed, range, x, y) {
+            entities.push({
+                id: Math.random(),
+                isPlayer: isPlayer,
+                name: name,
+                emoji: emoji,
+                hp: hp,
+                maxHp: hp,
+                damage: damage,
+                hitSpeed: hitSpeed,
+                range: range * TILE_H,
+                x: x, y: y,
+                level: 1,
+                isBuilding: true,
+                lastAttack: 0
+            });
+        }
+
+        function deployCard(card, cardId, isPlayer, x, y, level) {
+            if(card.type === "Spell") {
+                const dmg = getScaledStat(card.damage, level);
+                const bDmg = getScaledStat(card.bunkerDmg, level);
+                const rad = card.radius * TILE_H;
+
+                entities.forEach(e => {
+                    if(e.isPlayer !== isPlayer && e.hp > 0) {
+                        if(Math.hypot(e.x - x, e.y - y) <= rad) {
+                            e.hp -= e.isBuilding ? bDmg : dmg;
+                        }
+                    }
+                });
+
+                if(card.spriteEffect) {
+                    spellEffects.push({
+                        sprite: card.spriteEffect,
+                        x: x, y: y,
+                        radius: rad,
+                        durationLeft: card.effectDuration || 3.5
+                    });
+                }
+                return;
+            }
+
+            const count = card.count || 1;
+            const rows = card.rows || 1;
+            const cols = card.cols || Math.ceil(count / rows);
+            
+            let spawned = 0;
+            for(let r = 0; r < rows; r++) {
+                for(let c = 0; c < cols; c++) {
+                    if(spawned >= count) break;
+                    const offsetX = (c - (cols - 1) / 2) * 14;
+                    const offsetY = (r - (rows - 1) / 2) * 14;
+
+                    entities.push({
+                        id: Math.random(),
+                        isPlayer: isPlayer,
+                        cardId: cardId,
+                        name: card.name,
+                        emoji: card.emoji,
+                        spritePlayer: card.spritePlayer,
+                        spriteEnemy: card.spriteEnemy,
+                        hp: getScaledStat(card.hp, level),
+                        maxHp: getScaledStat(card.hp, level),
+                        damage: card.damage ? getScaledStat(card.damage, level) : 0,
+                        speed: card.speed * TILE_H,
+                        hitSpeed: card.hitSpeed || 1.0,
+                        range: card.range * TILE_H,
+                        targetType: card.target || "Ground",
+                        radius: (card.radius || 0) * TILE_H,
+                        isAir: !!card.isAir,
+                        isBuilding: !!card.isBuilding,
+                        projEmoji: card.projEmoji,
+                        projSpeed: (card.projSpeed || 0) * TILE_H,
+                        deathSpawn: card.deathSpawn,
+                        spawnUnitId: card.spawnUnitId,
+                        spawnLvl: card.spawnLvl,
+                        minusHpSec: card.minusHpSec ? getScaledStat(card.minusHpSec, level) : 0,
+                        spawnInterval: card.spawnInterval,
+                        lastSpawn: 0,
+                        lastAttack: performance.now(),
+                        level: level,
+                        x: x + offsetX,
+                        y: y + offsetY
+                    });
+                    spawned++;
+                }
+            }
+        }
+
+        function gameStep(now) {
+            const dt = (now - lastTime) / 1000;
+            lastTime = now;
+
+            if(energy < 10) {
+                energy = Math.min(10, energy + (dt / 3.0));
+            }
+            updateHUD();
+
+            updateEntities(dt, now);
+            updateProjectiles(dt);
+            updateSpellEffects(dt);
+            renderGame();
+
+            const playerMain = entities.find(e => e.isPlayer && e.name === "Main Bunker");
+            const enemyMain = entities.find(e => !e.isPlayer && e.name === "Main Bunker");
+
+            if(!playerMain) {
+                socket.emit('match_result', { winnerId: 'opponent' });
+                return;
+            } else if(!enemyMain) {
+                socket.emit('match_result', { winnerId: 'me' });
+                return;
+            }
+
+            gameLoopId = requestAnimationFrame(gameStep);
+        }
+
+        function updateEntities(dt, now) {
+            entities.forEach(e => {
+                if(e.minusHpSec) e.hp -= e.minusHpSec * dt;
+
+                if(e.spawnInterval) {
+                    if(!e.lastSpawn) e.lastSpawn = now + 1000;
+                    if(now - e.lastSpawn >= e.spawnInterval * 1000) {
+                        e.lastSpawn = now;
+                        const uCard = BASE_CARDS.find(c => c.id === e.spawnUnitId);
+                        deployCard(uCard, uCard.id, e.isPlayer, e.x, e.y + (e.isPlayer ? -20 : 20), e.spawnLvl);
+                    }
+                }
+
+                if(e.damage <= 0) return;
+
+                let targets = entities.filter(t => t.isPlayer !== e.isPlayer && t.hp > 0);
+                if(e.targetType === "Ground") targets = targets.filter(t => !t.isAir);
+                if(e.targetType === "Buildings") targets = targets.filter(t => t.isBuilding);
+
+                let closest = null;
+                let minDist = Infinity;
+                targets.forEach(t => {
+                    const dist = Math.hypot(t.x - e.x, t.y - e.y);
+                    if(dist < minDist) { minDist = dist; closest = t; }
+                });
+
+                if(closest) {
+                    if(minDist <= e.range) {
+                        if(now - e.lastAttack >= e.hitSpeed * 1000) {
+                            e.lastAttack = now;
+                            if(e.projEmoji) {
+                                projectiles.push({
+                                    emoji: e.projEmoji, x: e.x, y: e.y,
+                                    targetX: closest.x, targetY: closest.y,
+                                    speed: e.projSpeed, damage: e.damage,
+                                    radius: e.radius, targetEntity: closest
+                                });
+                            } else {
+                                if(e.range > 25) {
+                                    tracers.push({ x1: e.x, y1: e.y, x2: closest.x, y2: closest.y, alpha: 1.0 });
+                                }
+                                applyDamage(closest, e.damage, e.radius, e.x, e.y);
+                            }
+                        }
+                    } else if(!e.isBuilding) {
+                        const angle = Math.atan2(closest.y - e.y, closest.x - e.x);
+                        e.x += Math.cos(angle) * e.speed * dt;
+                        e.y += Math.sin(angle) * e.speed * dt;
+                    }
+                } else if(!e.isBuilding) {
+                    e.y += (e.isPlayer ? -1 : 1) * e.speed * dt;
+                }
+            });
+
+            for(let i = entities.length - 1; i >= 0; i--) {
+                const e = entities[i];
+                if(e.hp <= 0) {
+                    if(e.deathSpawn) {
+                        const uCard = BASE_CARDS.find(c => c.id === e.spawnUnitId);
+                        deployCard(uCard, uCard.id, e.isPlayer, e.x, e.y, e.spawnLvl);
+                    }
+                    entities.splice(i, 1);
+                }
+            }
+        }
+
+        function applyDamage(target, damage, radius, srcX, srcY) {
+            if(radius > 0) {
+                entities.forEach(e => {
+                    if(e.isPlayer !== target.isPlayer) return;
+                    if(Math.hypot(e.x - srcX, e.y - srcY) <= radius) e.hp -= damage;
+                });
+            } else {
+                target.hp -= damage;
+            }
+        }
+
+        function updateProjectiles(dt) {
+            for(let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                const dx = p.targetX - p.x;
+                const dy = p.targetY - p.y;
+                const dist = Math.hypot(dx, dy);
+                if(dist < 12) {
+                    applyDamage(p.targetEntity, p.damage, p.radius, p.targetX, p.targetY);
+                    projectiles.splice(i, 1);
+                } else {
+                    p.x += (dx / dist) * p.speed * dt;
+                    p.y += (dy / dist) * p.speed * dt;
+                }
+            }
+
+            for(let i = tracers.length - 1; i >= 0; i--) {
+                tracers[i].alpha -= dt * 4;
+                if(tracers[i].alpha <= 0) tracers.splice(i, 1);
+            }
+        }
+
+        function updateSpellEffects(dt) {
+            for(let i = spellEffects.length - 1; i >= 0; i--) {
+                spellEffects[i].durationLeft -= dt;
+                if(spellEffects[i].durationLeft <= 0) {
+                    spellEffects.splice(i, 1);
+                }
+            }
+        }
+
+        function renderGame() {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1e2d1e';
+            ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+            for(let i = 0; i <= GRID_CELLS; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, i * TILE_H);
+                ctx.lineTo(CANVAS_W, i * TILE_H);
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = '#1a3a4b';
+            ctx.fillRect(0, CANVAS_H / 2 - 12, CANVAS_W, 24);
+            ctx.fillStyle = '#4a3b2c';
+            ctx.fillRect(CANVAS_W/4 - 15, CANVAS_H / 2 - 14, 30, 28);
+            ctx.fillRect((3*CANVAS_W)/4 - 15, CANVAS_H / 2 - 14, 30, 28);
+
+            tracers.forEach(t => {
+                ctx.strokeStyle = `rgba(255, 235, 59, ${t.alpha})`;
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(t.x1, t.y1);
+                ctx.lineTo(t.x2, t.y2);
+                ctx.stroke();
+            });
+
+            spellEffects.forEach(se => {
+                const img = loadedImages[se.sprite];
+                if(img && img.complete) {
+                    ctx.drawImage(img, se.x - se.radius, se.y - se.radius, se.radius * 2, se.radius * 2);
+                } else {
+                    ctx.fillStyle = 'rgba(0, 229, 255, 0.3)';
+                    ctx.beginPath();
+                    ctx.arc(se.x, se.y, se.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            entities.forEach(e => {
+                const spritePath = e.isPlayer ? e.spritePlayer : e.spriteEnemy;
+                const img = spritePath ? loadedImages[spritePath] : null;
+
+                if (img && img.complete) {
+                    const sz = e.isBuilding ? 36 : 26;
+                    ctx.drawImage(img, e.x - sz/2, e.y - sz/2, sz, sz);
+                } else {
+                    ctx.font = e.isBuilding ? '26px serif' : '18px serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(e.emoji || '⚔️', e.x, e.y);
+                }
+
+                const barW = 34;
+                const barH = 5;
+                const barX = e.x - barW / 2;
+                const barY = e.y - (e.isBuilding ? 22 : 16);
+
+                ctx.fillStyle = '#000';
+                ctx.fillRect(barX, barY, barW, barH);
+                
+                const hpPct = Math.max(0, e.hp / e.maxHp);
+                ctx.fillStyle = e.isPlayer ? '#2196f3' : '#f44336';
+                ctx.fillRect(barX, barY, barW * hpPct, barH);
+
+                const badgeRadius = 6;
+                const badgeX = barX - 3;
+                const badgeY = barY + barH / 2;
+
+                ctx.beginPath();
+                ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+                ctx.fillStyle = e.isPlayer ? '#1565c0' : '#c62828';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 8px sans-serif';
+                ctx.fillText(e.level, badgeX, badgeY);
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '8px sans-serif';
+                ctx.fillText(`${formatNum(e.hp)}`, e.x, barY - 6);
+            });
+
+            projectiles.forEach(p => {
+                ctx.font = '16px serif';
+                ctx.fillText(p.emoji, p.x, p.y);
+            });
+        }
+
+        function updateHUD() {
+            document.getElementById('energy-fill').style.width = `${(energy / 10) * 100}%`;
+            document.getElementById('energy-text').innerText = `Энергия: ${formatNum(energy)} / 10`;
+            
+            const cards = document.querySelectorAll('.hand-card');
+            cards.forEach((c, idx) => {
+                const cardId = state.deck[idx];
+                const card = BASE_CARDS.find(x => x.id === cardId);
+                if(energy < card.energy) c.classList.add('disabled');
+                else c.classList.remove('disabled');
+            });
+        }
+
+        function renderHand() {
+            const handContainer = document.getElementById('hand-container');
+            handContainer.innerHTML = '';
+            state.deck.forEach((cardId, idx) => {
+                const card = BASE_CARDS.find(c => c.id === cardId);
+                const el = document.createElement('div');
+                el.className = `hand-card ${selectedHandIndex === idx ? 'selected' : ''}`;
+                
+                let iconContent = card.cardIcon ? `<img src="${card.cardIcon}" style="width:20px;height:20px;object-fit:contain;">` : `<div style="font-size: 18px;">${card.emoji}</div>`;
+
+                el.innerHTML = `
+                    <div class="cost">${formatNum(card.energy)}</div>
+                    ${iconContent}
+                    <div style="font-size: 8px; font-weight: bold; overflow: hidden; white-space: nowrap;">${card.name}</div>
+                `;
+                el.onclick = () => {
+                    selectedHandIndex = selectedHandIndex === idx ? null : idx;
+                    renderHand();
+                };
+                handContainer.appendChild(el);
+            });
+        }
+
+        function surrender() {
+            socket.emit('match_result', { winnerId: 'opponent' });
+        }
+    </script>
+</body>
+</html>
